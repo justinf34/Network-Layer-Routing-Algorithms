@@ -10,8 +10,7 @@ using namespace std;
 #define MAX_ROWCOL      100
 #define MAX_EVENTS      10000
 #define CALL_ARRIVAL    0
-#define CONNECTED       1
-#define NOT_CONNECTED   -1
+#define CALL_END        1
 #define INF             999
 
 int propdelay[MAX_ROWCOL][MAX_ROWCOL];              /// Stores all delays
@@ -21,15 +20,16 @@ int graph[MAX_ROWCOL][MAX_ROWCOL];
 
 struct Event
 {
-    float strt_time;                /// Call start
     int event_type;                 /// See if event is connected, incoming, or Blocked/Done
-    int id;
+    float strt_time;                /// Call start
+    float duration;                 /// How long the call will last in min
     char source;                    /// Source node
     char dest;                      /// Destination node
-    float duration;                 /// How long the call will last in min
-    char route[MAX_ROWCOL];         /// Route used to connect
+    string route;         /// Route used to connect
 } EventList[MAX_EVENTS];
 
+int minDistance(int dist[], bool sptSet[], int V);
+string getPath(int parent[], int j);
 void shpf(char src, char dst, int numV);
 
 
@@ -107,17 +107,16 @@ int main(int argc, char const *argv[])
     while( fscanf(file_ptr, "%f %c %c %f", &strt, &src, &dst, &duration) == 4 )
     {
         printf("%8.6f %c %c %8.6f\n", strt, src, dst, duration);
-        EventList[numevents].id = numevents;
-        EventList[numevents].source = src;
-        EventList[numevents].dest = dst;
+        EventList[numevents].event_type = CALL_ARRIVAL;
         EventList[numevents].strt_time = strt;
         EventList[numevents].duration = duration;
+        EventList[numevents].source = src;
+        EventList[numevents].dest = dst;
         numevents++;
     }
     fclose(file_ptr);
 
 
-    /// Set a timer
 
     /// Route call
     /// Find path and then allocate resource
