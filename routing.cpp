@@ -4,19 +4,23 @@
 #include <string>
 #include <algorithm>    /// max
 #include <iostream>
+#include <limits.h>
 
 using namespace std;
 
 #define MAX_ROWCOL      100
-#define MAX_EVENTS      10000
-#define CALL_ARRIVAL    0
-#define CALL_END        1
+#define MAX_EVENTS      16384
+#define CALL_ARRIVAL    1
+#define CALL_END        0
 #define INF             999
 
 int propdelay[MAX_ROWCOL][MAX_ROWCOL];              /// Stores all delays
 int capacity[MAX_ROWCOL][MAX_ROWCOL];
 int available[MAX_ROWCOL][MAX_ROWCOL];
 int graph[MAX_ROWCOL][MAX_ROWCOL];
+
+float avgHops, avgDelay;
+int blocked, success;
 
 struct Event
 {
@@ -29,8 +33,14 @@ struct Event
 } EventList[MAX_EVENTS];
 
 int minDistance(int dist[], bool sptSet[], int V);
+
 string getPath(int parent[], int j);
-void shpf(char src, char dst, int numV);
+
+string shpf(char src, char dst, int numV);
+
+void eventShift(int event_i, int numCalls);
+
+void processPath(string &path, int allocate);
 
 
 
@@ -38,15 +48,16 @@ int main(int argc, char const *argv[])
 {
     /// Read topology file
     FILE *file_ptr;
-    int numevents = 0;             /// Number of events in call workload file
-    float avgHop, avgDelay;        /// Average hop and delay,respectively, for all successful calls
+    int numCalls = 0;             /// Number of events in call workload file
+    float avgHop, avgDelay;        /// Average hop and delay,respectively, for all successessessful calls
     int numSucc, numBloc;
-    int maxNode = 0;
+    int numNode = 0;
     string routing = "SHPF";
     
     if ( argc != 3)
     {
         printf("Usage: %s <topology file> <call workload file>\n", argv[0]);
+        exit(0);
     }
 
     /// Initialize the graph table with INF/0 values
@@ -76,15 +87,17 @@ int main(int argc, char const *argv[])
 
     while (4 == fscanf(file_ptr, "%c %c %d %d\n", &src, &dst, &delay, &cap))  ///"%[^\n]\n" Read until the first \n is seen
     {
-         printf("%c %c %d %d\n", src, dst, delay, cap);
          row = src - 'A';
          col = dst - 'A';
-         maxNode = max((int)row, max(maxNode, (int)col));
 
-         
+         numNode = max((int)row, max(numNode, (int)col));
+
          propdelay[row][col] = delay;
+
          capacity[row][col] = cap;
+
          available[row][col] = cap;  
+         available[col][row] = -1;
 
          graph[row][col] = 1;
          graph[col][row] = 1;
@@ -106,26 +119,72 @@ int main(int argc, char const *argv[])
 
     while( fscanf(file_ptr, "%f %c %c %f", &strt, &src, &dst, &duration) == 4 )
     {
-        printf("%8.6f %c %c %8.6f\n", strt, src, dst, duration);
-        EventList[numevents].event_type = CALL_ARRIVAL;
-        EventList[numevents].strt_time = strt;
-        EventList[numevents].duration = duration;
-        EventList[numevents].source = src;
-        EventList[numevents].dest = dst;
-        numevents++;
+        // printf("%8.6f %c %c %8.6f\n", strt, src, dst, duration);
+        EventList[numCalls].event_type = CALL_ARRIVAL;
+        EventList[numCalls].strt_time = strt;
+        EventList[numCalls].duration = duration;
+        EventList[numCalls].source = src;
+        EventList[numCalls].dest = dst;
+        numCalls++;
     }
     fclose(file_ptr);
 
 
+    avgDelay = 0;
+    avgHop = 0;
+    success = 0;
+    blocked = 0;
 
-    /// Route call
-    /// Find path and then allocate resource
-    /// Check if a connection needs to expire
-    /// Close connection and free up resource
+    i = 0;
+    int handledCalls = 0;
 
-    /// Read call work load
+    // EventList[1].strt_time += EventList[1].duration;
+    // eventShift(1);
+
+    // string temp = shpf('B', 'C', numNode+1);
+    // printf("%s\n", temp.c_str());
+
+    while (handledCalls != numCalls)
+    {
+        /// Read event
+        int type = EventList[i].event_type;
+        if ( type == 1 )
+        {
+            string res = shpf(EventList[i].source, EventList[i].dest, numNode+1);
+            printf("Main while: %c -> %c = %s\n", EventList[i].source, EventList[i].dest, res.c_str());
+            if ( res.length() > 0 )
+            {                
+                success++;
+                EventList[i].strt_time += EventList[i].duration;
+                EventList[i].event_type = CALL_END;
+                EventList[i].route = res;
+                processPath(res, 1);
+                eventShift(i, numCalls);
+            } else 
+            {
+                blocked++;
+                EventList[i].event_type = 0;
+                i++;
+            }
+        }
+        else
+        {
+            processPath(EventList[i].route, 0);
+            EventList[i].event_type = 0;
+            i++;
+            handledCalls++;
+        }
+    }
+
+    // for(int k=0; k < numCalls; k++)
+    // {
+    //     printf("%1.6f %c %c %d\n", EventList[k].strt_time, EventList[k].source, EventList[k].dest, EventList[k].event_type);
+    // }
+    cout << blocked << endl;
+     
     return 0;
 }
+
 
 string getPath(int parent[], int j) 
 { 
@@ -134,16 +193,15 @@ string getPath(int parent[], int j)
 
     string temp;
     char node = j + 'A';
-
 	temp += getPath(parent, parent[j]);
     temp += node;
 
     return temp; 
 } 
 
+
 int minDistance(int dist[], bool sptSet[], int V) 
 { 
-	
 	// Initialize min value 
 	int min = INF, min_index; 
 
@@ -155,21 +213,101 @@ int minDistance(int dist[], bool sptSet[], int V)
 	return min_index; 
 } 
 
-void shpf(char src, char dst, int numV) 
+
+void eventShift(int event_i, int numCalls)
+{
+    float strt, duration;
+    int type;
+    int head = event_i + 1;
+    int tail = event_i;
+    char src, dest;
+    string rt;
+
+    /// Get copy
+    strt = EventList[event_i].strt_time;
+    duration = EventList[event_i].duration;
+    type = EventList[event_i].event_type;
+    src = EventList[event_i].source;
+    dest = EventList[event_i].dest;
+    rt = EventList[event_i].route;
+
+
+    while (1)
+    {
+        if( EventList[head].strt_time >= strt  || head == numCalls)
+        {
+            EventList[tail].strt_time = strt;
+            EventList[tail].duration = duration;
+            EventList[tail].event_type = type;
+            EventList[tail].source = src;
+            EventList[tail].dest = dest;
+            EventList[tail].route = rt;
+            break;
+        }
+        else
+        {
+            EventList[tail].strt_time = EventList[head].strt_time;
+            EventList[tail].duration = EventList[head].duration;
+            EventList[tail].event_type = EventList[head].event_type;
+            EventList[tail].source = EventList[head].source;
+            EventList[tail].dest = EventList[head].dest;
+            EventList[tail].route = EventList[head].route;
+        }
+        tail = head;
+        head++;
+    }
+
+}
+
+void processPath(string &path, int allocate)
+{
+    float callDelay = 0;
+
+    if ( allocate )
+        avgHops += (float)path.length();
+
+    for (int i = 1; i < path.size(); i++)
+    {
+        char row = ((char)path[i - 1]) - 'A';
+        char col = ((char)path[i]) - 'A';
+
+        if ( available[row][col] == -1 ) 
+        {
+            char temp = row;
+            row = col;
+            col =  temp;
+        }
+
+        if ( !allocate ) available[row][col]++;
+        else
+        {
+            available[row][col]--;
+            callDelay += propdelay[row][col];
+        }
+
+    }
+
+    if ( allocate )
+        avgDelay += callDelay;   
+}
+
+
+string shpf(char src, char dst, int numV) 
 {
     int src_i = (int)(src - 'A');
-    int dst_i = (int)(dst - 'B');
+    int dst_i = (int)(dst - 'A');
 
     int dist[numV];
     bool sptSet[numV];
     int parent[numV];
 
+    parent[src_i] = -1;
     for(int i = 0; i < numV; i++)
     {
-        parent[0] = -1;
-        dist[i] = 0;
+        dist[i] = INF;
         sptSet[i] = false;
     }
+
 
     dist[src_i] = 0;
 
@@ -181,7 +319,8 @@ void shpf(char src, char dst, int numV)
 
 		for (int v = 0; v < numV; v++)
         {
-			if (!sptSet[v] && graph[u][v] && dist[u] + graph[u][v] < dist[v]) 
+			if (!sptSet[v] && graph[u][v] && dist[u] + graph[u][v] < dist[v]
+            && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
 			{ 
 				parent[v] = u; 
 				dist[v] = dist[u] + graph[u][v]; 
@@ -189,9 +328,13 @@ void shpf(char src, char dst, int numV)
         } 
     }
 
+    if (dist[dst_i] == INF) return "";
+
+
     string path;
     path += src;
     path += getPath(parent, dst_i);
-
-    cout << path << endl;
+    // printf("SHPF: %c -> %c = ", src, dst);
+    // printf("%s\n", path.c_str());
+    return path;
 }
