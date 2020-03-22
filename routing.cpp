@@ -17,7 +17,7 @@ using namespace std;
 int propdelay[MAX_ROWCOL][MAX_ROWCOL];              /// Stores all delays
 int capacity[MAX_ROWCOL][MAX_ROWCOL];
 int available[MAX_ROWCOL][MAX_ROWCOL];
-int graph[MAX_ROWCOL][MAX_ROWCOL];
+float graph[MAX_ROWCOL][MAX_ROWCOL];
 
 float avgHops, avgDelay;
 int blocked, success;
@@ -32,11 +32,11 @@ struct Event
     string route;         /// Route used to connect
 } EventList[MAX_EVENTS];
 
-int minDistance(int dist[], bool sptSet[], int V);
+int minDistance(float dist[], bool sptSet[], int V);
 
 string getPath(int parent[], int j);
 
-string shpf(char src, char dst, int numV);
+string djikstra(char src, char dst, int numV);
 
 void eventShift(int event_i, int numCalls);
 
@@ -52,13 +52,14 @@ int main(int argc, char const *argv[])
     float avgHop, avgDelay;        /// Average hop and delay,respectively, for all successessessful calls
     int numSucc, numBloc;
     int numNode = 0;
-    string routing = "SHPF";
+    string routing;
     
-    if ( argc != 3)
+    if ( argc != 4)
     {
-        printf("Usage: %s <topology file> <call workload file>\n", argv[0]);
+        printf("Usage: %s <topology file> <call workload file> <routing alogrithm>\n", argv[0]);
         exit(0);
     }
+
 
     /// Initialize the graph table with INF/0 values
     int i;
@@ -78,6 +79,8 @@ int main(int argc, char const *argv[])
         printf("Error! Could not open %s. Aborting program...\n", topology_file);
         exit(0);
     }
+
+    int algo = atoi(argv[3]);
 
     /// Reading topology file
     string line;
@@ -99,8 +102,22 @@ int main(int argc, char const *argv[])
          available[row][col] = cap;  
          available[col][row] = -1;
 
-         graph[row][col] = 1;
-         graph[col][row] = 1;
+        /// Have ot change depending on protocol
+        switch (algo)
+        {
+        case 1:
+            graph[row][col] = 1;
+            graph[col][row] = 1;
+            break;
+        case 2:
+            graph[row][col] = delay;
+            graph[col][row] = delay;
+            break;
+        case 3:                    /// DELETE Later
+            graph[row][col] = 1;
+            graph[col][row] = 1;
+            break;
+        }
     }
     fclose(file_ptr);
 
@@ -119,7 +136,6 @@ int main(int argc, char const *argv[])
 
     while( fscanf(file_ptr, "%f %c %c %f", &strt, &src, &dst, &duration) == 4 )
     {
-        // printf("%8.6f %c %c %8.6f\n", strt, src, dst, duration);
         EventList[numCalls].event_type = CALL_ARRIVAL;
         EventList[numCalls].strt_time = strt;
         EventList[numCalls].duration = duration;
@@ -150,7 +166,7 @@ int main(int argc, char const *argv[])
         int type = EventList[i].event_type;
         if ( type == 1 )
         {
-            string res = shpf(EventList[i].source, EventList[i].dest, numNode+1);
+            string res = djikstra(EventList[i].source, EventList[i].dest, numNode+1);
             printf("Main while: %c -> %c = %s\n", EventList[i].source, EventList[i].dest, res.c_str());
             if ( res.length() > 0 )
             {                
@@ -180,38 +196,10 @@ int main(int argc, char const *argv[])
     // {
     //     printf("%1.6f %c %c %d\n", EventList[k].strt_time, EventList[k].source, EventList[k].dest, EventList[k].event_type);
     // }
-    cout << blocked << endl;
+    cout << success << " " <<  blocked << endl;
      
     return 0;
 }
-
-
-string getPath(int parent[], int j) 
-{ 
-	// Base Case : If j is source 
-	if (parent[j] == - 1) return ""; 
-
-    string temp;
-    char node = j + 'A';
-	temp += getPath(parent, parent[j]);
-    temp += node;
-
-    return temp; 
-} 
-
-
-int minDistance(int dist[], bool sptSet[], int V) 
-{ 
-	// Initialize min value 
-	int min = INF, min_index; 
-
-	for (int v = 0; v < V; v++) 
-		if (sptSet[v] == false && 
-				dist[v] <= min) 
-			min = dist[v], min_index = v; 
-
-	return min_index; 
-} 
 
 
 void eventShift(int event_i, int numCalls)
@@ -259,12 +247,13 @@ void eventShift(int event_i, int numCalls)
 
 }
 
+
 void processPath(string &path, int allocate)
 {
     float callDelay = 0;
 
     if ( allocate )
-        avgHops += (float)path.length();
+        avgHops += ((float)path.length() - 1 );
 
     for (int i = 1; i < path.size(); i++)
     {
@@ -292,12 +281,12 @@ void processPath(string &path, int allocate)
 }
 
 
-string shpf(char src, char dst, int numV) 
+string djikstra(char src, char dst, int numV) 
 {
     int src_i = (int)(src - 'A');
     int dst_i = (int)(dst - 'A');
 
-    int dist[numV];
+    float dist[numV];
     bool sptSet[numV];
     int parent[numV];
 
@@ -334,7 +323,38 @@ string shpf(char src, char dst, int numV)
     string path;
     path += src;
     path += getPath(parent, dst_i);
-    // printf("SHPF: %c -> %c = ", src, dst);
-    // printf("%s\n", path.c_str());
+
     return path;
 }
+
+
+string getPath(int parent[], int j) 
+{ 
+	// Base Case : If j is source 
+	if (parent[j] == - 1) return ""; 
+
+    string temp;
+    char node = j + 'A';
+	temp += getPath(parent, parent[j]);
+    temp += node;
+
+    return temp; 
+} 
+
+
+int minDistance(float dist[], bool sptSet[], int V) 
+{ 
+	// Initialize min value 
+	float min = INF;
+    int min_index; 
+
+	for (int v = 0; v < V; v++) 
+		if (sptSet[v] == false && 
+				dist[v] <= min) 
+			min = dist[v], min_index = v; 
+
+	return min_index; 
+} 
+
+
+
