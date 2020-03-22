@@ -80,7 +80,7 @@ int main(int argc, char const *argv[])
         exit(0);
     }
 
-    int algo = atoi(argv[3]);
+    int rt_algo = atoi(argv[3]);
 
     /// Reading topology file
     string line;
@@ -103,7 +103,7 @@ int main(int argc, char const *argv[])
          available[col][row] = -1;
 
         /// Have ot change depending on protocol
-        switch (algo)
+        switch (rt_algo)
         {
         case 1:
             graph[row][col] = 1;
@@ -114,7 +114,7 @@ int main(int argc, char const *argv[])
             graph[col][row] = delay;
             break;
         case 3:                    /// DELETE Later
-            graph[row][col] = 1;
+            graph[row][col] = cap;
             graph[col][row] = 1;
             break;
         }
