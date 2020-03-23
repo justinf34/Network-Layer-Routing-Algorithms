@@ -19,7 +19,7 @@ int capacity[MAX_ROWCOL][MAX_ROWCOL];
 int available[MAX_ROWCOL][MAX_ROWCOL];
 float graph[MAX_ROWCOL][MAX_ROWCOL];
 
-float avgHops, avgDelay;
+float avgHop, avgDelay;
 int blocked, success;
 
 struct Event
@@ -40,8 +40,11 @@ string djikstra(char src, char dst, int numV);
 
 void eventShift(int event_i, int numCalls);
 
-void processPath(string &path, int allocate);
+void processPath(string &path, int allocate, int rta);
 
+int maxDistance(float dist[], bool sptSet[], int V);
+
+string djikstra_max(char src, char dst, int numV) ;
 
 
 int main(int argc, char const *argv[])
@@ -49,10 +52,7 @@ int main(int argc, char const *argv[])
     /// Read topology file
     FILE *file_ptr;
     int numCalls = 0;             /// Number of events in call workload file
-    float avgHop, avgDelay;        /// Average hop and delay,respectively, for all successessessful calls
-    int numSucc, numBloc;
     int numNode = 0;
-    string routing;
     
     if ( argc != 4)
     {
@@ -113,9 +113,9 @@ int main(int argc, char const *argv[])
             graph[row][col] = delay;
             graph[col][row] = delay;
             break;
-        case 3:                    /// DELETE Later
-            graph[row][col] = cap;
-            graph[col][row] = 1;
+        case 4:                 
+            graph[row][col] = -((float)cap);
+            graph[col][row] = -((float)cap);
             break;
         }
     }
@@ -154,27 +154,26 @@ int main(int argc, char const *argv[])
     i = 0;
     int handledCalls = 0;
 
-    // EventList[1].strt_time += EventList[1].duration;
-    // eventShift(1);
-
-    // string temp = shpf('B', 'C', numNode+1);
-    // printf("%s\n", temp.c_str());
-
     while (handledCalls != numCalls)
     {
         /// Read event
         int type = EventList[i].event_type;
         if ( type == 1 )
         {
-            string res = djikstra(EventList[i].source, EventList[i].dest, numNode+1);
-            printf("Main while: %c -> %c = %s\n", EventList[i].source, EventList[i].dest, res.c_str());
+            string res;
+            if( rt_algo ==  4)
+                res = djikstra_max(EventList[i].source, EventList[i].dest, numNode+1);
+            else
+                res = djikstra(EventList[i].source, EventList[i].dest, numNode+1);
+    
             if ( res.length() > 0 )
-            {                
+            {   
+                printf("Main while: Allocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, res.c_str());             
                 success++;
                 EventList[i].strt_time += EventList[i].duration;
                 EventList[i].event_type = CALL_END;
                 EventList[i].route = res;
-                processPath(res, 1);
+                processPath(res, 1, rt_algo);
                 eventShift(i, numCalls);
             } else 
             {
@@ -185,18 +184,44 @@ int main(int argc, char const *argv[])
         }
         else
         {
-            processPath(EventList[i].route, 0);
+            printf("Main while: Deallocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, EventList[i].route.c_str());             
+            processPath(EventList[i].route, 0, rt_algo);
             EventList[i].event_type = 0;
             i++;
             handledCalls++;
         }
     }
 
-    // for(int k=0; k < numCalls; k++)
-    // {
-    //     printf("%1.6f %c %c %d\n", EventList[k].strt_time, EventList[k].source, EventList[k].dest, EventList[k].event_type);
-    // }
-    cout << success << " " <<  blocked << endl;
+    
+    /// Calculating and outputting metrics
+    avgDelay /= (float)success;
+    avgHop /=   (float)success;
+    float blockPercentage = (100 * (float)blocked) / (float)numCalls;
+    string routing;
+
+    switch (rt_algo)
+    {
+    case 1:
+        routing = "SHPF";
+        break;
+    
+    case 2:
+        routing = "SDPF";
+        break;
+    
+    case 3:
+        routing = "LLP";
+        break;
+
+    case 4:
+        routing="MFC";
+        break;
+    }
+
+    printf("Policy \t Calls \t Succ \t Block(%%) \t Hops \t Delay\n");
+    printf("---------------------------------------------------------\n");
+    printf("%4s \t %d \t % d \t %d (%.2f%%) \t %.3f \t %.3f\n", 
+            routing.c_str(), numCalls, success, blocked, blockPercentage, avgHop, avgDelay);
      
     return 0;
 }
@@ -248,12 +273,12 @@ void eventShift(int event_i, int numCalls)
 }
 
 
-void processPath(string &path, int allocate)
+void processPath(string &path, int allocate, int rta)
 {
     float callDelay = 0;
 
     if ( allocate )
-        avgHops += ((float)path.length() - 1 );
+        avgHop += ((float)path.length() - 1 );
 
     for (int i = 1; i < path.size(); i++)
     {
@@ -267,10 +292,23 @@ void processPath(string &path, int allocate)
             col =  temp;
         }
 
-        if ( !allocate ) available[row][col]++;
+        if ( !allocate ) 
+        {
+            available[row][col]++;
+            if ( rta == 4 ) 
+            {
+                graph[row][col] -= 1.0;
+                graph[col][row] -= 1.0;
+            }
+        }
         else
         {
             available[row][col]--;
+            if ( rta == 4 ) 
+            {
+                graph[row][col] += 1.0;
+                graph[col][row] += 1.0;
+            }
             callDelay += propdelay[row][col];
         }
 
@@ -297,28 +335,35 @@ string djikstra(char src, char dst, int numV)
         sptSet[i] = false;
     }
 
-
     dist[src_i] = 0;
 
     for(int step = 0; step < numV - 1; step++)
     {
         int u = minDistance(dist, sptSet, numV);
         sptSet[u] = true;
-
+        
 
 		for (int v = 0; v < numV; v++)
         {
+
+            
+
+
 			if (!sptSet[v] && graph[u][v] && dist[u] + graph[u][v] < dist[v]
             && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
 			{ 
 				parent[v] = u; 
 				dist[v] = dist[u] + graph[u][v]; 
 			} 
+
+
+
+
+
         } 
     }
 
     if (dist[dst_i] == INF) return "";
-
 
     string path;
     path += src;
@@ -335,6 +380,7 @@ string getPath(int parent[], int j)
 
     string temp;
     char node = j + 'A';
+    // printf("Parent is %d \t j = %d\n", parent[j], j);
 	temp += getPath(parent, parent[j]);
     temp += node;
 
@@ -355,6 +401,51 @@ int minDistance(float dist[], bool sptSet[], int V)
 
 	return min_index; 
 } 
+
+
+
+string djikstra_max(char src, char dst, int numV) 
+{
+    int src_i = (int)(src - 'A');
+    int dst_i = (int)(dst - 'A');
+
+    float dist[numV];
+    bool sptSet[numV];
+    int parent[numV];
+
+    parent[src_i] = -1;
+    for(int i = 0; i < numV; i++)
+    {
+        dist[i] = INF;
+        sptSet[i] = false;
+    }
+
+    dist[src_i] = -INF;
+
+    for(int step = 0; step < numV - 1; step++)
+    {
+        int u = minDistance(dist, sptSet, numV);
+        sptSet[u] = true;
+
+		for (int v = 0; v < numV; v++)
+        {
+			if (!sptSet[v] && graph[u][v] && max(dist[u] , graph[u][v]) < dist[v]
+            && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
+			{ 
+				parent[v] = u; 
+				dist[v] = max(dist[u] , graph[u][v]); 
+			} 
+        } 
+    }
+
+    if (dist[dst_i] == INF) return "";
+
+    string path;
+    path += src;
+    path += getPath(parent, dst_i);
+
+    return path;
+}
 
 
 
