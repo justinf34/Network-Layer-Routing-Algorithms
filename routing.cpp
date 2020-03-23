@@ -29,7 +29,7 @@ struct Event
     float duration;                 /// How long the call will last in min
     char source;                    /// Source node
     char dest;                      /// Destination node
-    string route;         /// Route used to connect
+    string route;                   /// Route used to connect
 } EventList[MAX_EVENTS];
 
 int minDistance(float dist[], bool sptSet[], int V);
@@ -113,6 +113,12 @@ int main(int argc, char const *argv[])
             graph[row][col] = delay;
             graph[col][row] = delay;
             break;
+
+        case 3:
+            graph[row][col] = -1;
+            graph[col][row] = -1;
+            break;
+
         case 4:                 
             graph[row][col] = -((float)cap);
             graph[col][row] = -((float)cap);
@@ -179,6 +185,7 @@ int main(int argc, char const *argv[])
             {
                 blocked++;
                 EventList[i].event_type = 0;
+                handledCalls++;
                 i++;
             }
         }
@@ -310,6 +317,16 @@ void processPath(string &path, int allocate, int rta)
                 graph[col][row] += 1.0;
             }
             callDelay += propdelay[row][col];
+        }
+
+        if ( rta == 3 )
+        {
+            float av = (float)available[row][col];
+            float cap = (float)capacity[row][col];
+            float new_val = av / cap;
+
+            graph[row][col] = new_val;
+            graph[col][row] = new_val;
         }
 
     }
