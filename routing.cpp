@@ -32,19 +32,17 @@ struct Event
     string route;                   /// Route used to connect
 } EventList[MAX_EVENTS];
 
-int minDistance(float dist[], bool sptSet[], int V);
+int minDistance(float dist[], bool sptSet[], int V, int rt);
 
 string getPath(int parent[], int j);
 
 string djikstra(char src, char dst, int numV);
 
+string djikstra_max(char src, char dst, int numV);
+
 void eventShift(int event_i, int numCalls);
 
 void processPath(string &path, int allocate, int rta);
-
-int maxDistance(float dist[], bool sptSet[], int V);
-
-string djikstra_max(char src, char dst, int numV) ;
 
 
 int main(int argc, char const *argv[])
@@ -167,14 +165,14 @@ int main(int argc, char const *argv[])
         if ( type == 1 )
         {
             string res;
-            if( rt_algo ==  4)
+            if( rt_algo ==  4 || rt_algo == 3)
                 res = djikstra_max(EventList[i].source, EventList[i].dest, numNode+1);
             else
                 res = djikstra(EventList[i].source, EventList[i].dest, numNode+1);
     
             if ( res.length() > 0 )
             {   
-                printf("Main while: Allocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, res.c_str());             
+                // printf("Main while: Allocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, res.c_str());             
                 success++;
                 EventList[i].strt_time += EventList[i].duration;
                 EventList[i].event_type = CALL_END;
@@ -191,7 +189,7 @@ int main(int argc, char const *argv[])
         }
         else
         {
-            printf("Main while: Deallocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, EventList[i].route.c_str());             
+            // printf("Main while: Deallocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, EventList[i].route.c_str());             
             processPath(EventList[i].route, 0, rt_algo);
             EventList[i].event_type = 0;
             i++;
@@ -325,8 +323,8 @@ void processPath(string &path, int allocate, int rta)
             float cap = (float)capacity[row][col];
             float new_val = av / cap;
 
-            graph[row][col] = new_val;
-            graph[col][row] = new_val;
+            graph[row][col] = -new_val;
+            graph[col][row] = -new_val;
         }
 
     }
@@ -356,15 +354,12 @@ string djikstra(char src, char dst, int numV)
 
     for(int step = 0; step < numV - 1; step++)
     {
-        int u = minDistance(dist, sptSet, numV);
+        int u = minDistance(dist, sptSet, numV, 0);
         sptSet[u] = true;
         
 
 		for (int v = 0; v < numV; v++)
         {
-
-            
-
 
 			if (!sptSet[v] && graph[u][v] && dist[u] + graph[u][v] < dist[v]
             && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
@@ -372,11 +367,6 @@ string djikstra(char src, char dst, int numV)
 				parent[v] = u; 
 				dist[v] = dist[u] + graph[u][v]; 
 			} 
-
-
-
-
-
         } 
     }
 
@@ -405,16 +395,28 @@ string getPath(int parent[], int j)
 } 
 
 
-int minDistance(float dist[], bool sptSet[], int V) 
+int minDistance(float dist[], bool sptSet[], int V, int rt) 
 { 
 	// Initialize min value 
 	float min = INF;
     int min_index; 
 
 	for (int v = 0; v < V; v++) 
-		if (sptSet[v] == false && 
-				dist[v] <= min) 
-			min = dist[v], min_index = v; 
+    {
+        switch (rt)
+        {
+        case 0:
+            if (sptSet[v] == false && dist[v] < min) 
+			    min = dist[v], min_index = v; 
+            break;
+        
+        case 1:
+            if (sptSet[v] == false && dist[v] <= min) 
+			    min = dist[v], min_index = v; 
+            break;
+        }
+
+    }
 
 	return min_index; 
 } 
@@ -441,7 +443,7 @@ string djikstra_max(char src, char dst, int numV)
 
     for(int step = 0; step < numV - 1; step++)
     {
-        int u = minDistance(dist, sptSet, numV);
+        int u = minDistance(dist, sptSet, numV, 1);
         sptSet[u] = true;
 
 		for (int v = 0; v < numV; v++)
