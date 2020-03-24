@@ -87,6 +87,8 @@ string getPath(int parent[], int j);
  **/
 string djikstra(char src, char dst, int numV, int rt);
 
+string ult_shortest(char src, char dst, int numV);
+
 /**
  * Shift event index in EventList to keep 
  * the list in an ascending order based on
@@ -237,7 +239,7 @@ int main(int argc, char const *argv[])
             string empty;
             if (rt_algo == 5)
             {
-                empty = djikstra(EventList[i].source, EventList[i].dest, numNode+1, rt);
+                empty = ult_shortest(EventList[i].source, EventList[i].dest, numNode+1);
                 if ( res.size() > empty.size() ) res = "";
             }
 
