@@ -1,28 +1,46 @@
+/***********************************************************************
+ * Last Name:   Flores
+ * First Name:  Justin
+ * Student ID:  30045372
+ * Course:      CPSC 441
+ * Tutorial:    T05
+ * Assignment:  3
+ * File name: scan.cpp
+ * 
+ * Program that simulates routing algorithms and
+ * priting out metrics that indicate the performance
+ * of the routing algorithm
+ * 
+ * To compile:
+ *  g++ routing.cpp -o routing
+ * To run:
+ *  ./routing <topology file> <call workload file> <routing algorithm #>
+ ************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string>
 #include <algorithm>    /// max
-#include <iostream>
-#include <limits.h>
+
 
 using namespace std;
 
-#define MAX_ROWCOL      100
-#define MAX_EVENTS      16384
-#define CALL_ARRIVAL    1
-#define CALL_END        0
-#define INF             999
+#define MAX_ROWCOL      100                         /// Dimmension of cost matrix
+#define MAX_EVENTS      16384                       /// Max number of events that the algorithm can handle
+#define CALL_ARRIVAL    1                           /// Code for incoming call
+#define CALL_END        0                           /// Code for ending call
+#define INF             999                         /// How infinity is represented for the cost graphs
 
-int propdelay[MAX_ROWCOL][MAX_ROWCOL];              /// Stores all delays
-int capacity[MAX_ROWCOL][MAX_ROWCOL];
-int available[MAX_ROWCOL][MAX_ROWCOL];
-float graph[MAX_ROWCOL][MAX_ROWCOL];
+int propdelay[MAX_ROWCOL][MAX_ROWCOL];              /// Link delays
+int capacity[MAX_ROWCOL][MAX_ROWCOL];               /// Link capacity
+int available[MAX_ROWCOL][MAX_ROWCOL];              /// Current available connection in each link
+float graph[MAX_ROWCOL][MAX_ROWCOL];                /// Djikstra cost graph
 
-float avgHop, avgDelay;
-int blocked, success;
+float avgHop, avgDelay;                             /// Hop and Delay metrics
+int blocked, success;                               /// Number of successful and blocked calls
 
-struct Event
+
+struct Event                        /// Event object
 {
     int event_type;                 /// See if event is connected, incoming, or Blocked/Done
     float strt_time;                /// Call start
@@ -30,34 +48,78 @@ struct Event
     char source;                    /// Source node
     char dest;                      /// Destination node
     string route;                   /// Route used to connect
-} EventList[MAX_EVENTS];
+} EventList[MAX_EVENTS];            /// Number of events to handle
 
+/**
+ * Find the node the "lowest" cost node that has not been evaluated
+ * 
+ * @param dist cost from src to all nodes
+ * @param sptSet indicates if a node has been evaluated
+ * @param V number of node
+ * @param rt routing algorithm used
+ * 
+ * @return tne index of the next node to be evaluated
+ **/
 int minDistance(float dist[], bool sptSet[], int V, int rt);
 
+/**
+ * Converts the int representation of path
+ * to string representation
+ * 
+ * @param parent array containing parent of each node
+ * @param j index number of node
+ * 
+ * @return the string format of the path to be taken
+ **/
 string getPath(int parent[], int j);
 
-string djikstra(char src, char dst, int numV);
 
-string djikstra_max(char src, char dst, int numV);
+/**
+ *  Find the most "optimize" path from source node
+ *  to destination node
+ * 
+ *  @param src source node
+ *  @param dst destination node
+ *  @param numV number of nodes in the graph
+ *  @param rtr determines which evaluation method to use
+ * 
+ *  @return string representaion of optimized path
+ **/
+string djikstra(char src, char dst, int numV, int rt);
 
+/**
+ * Shift event index in EventList to keep 
+ * the list in an ascending order based on
+ * event start time
+ * 
+ * @param event_i index of event
+ * @param numCalls number of events in EventList
+ **/
 void eventShift(int event_i, int numCalls);
 
+/**
+ * A allocate or deallocate network resource 
+ * using a given path
+ * 
+ * @param path path to follow when allocating and deallocating resource
+ * @param allocate 1 for allocate and 0 for deallocated
+ * @param rta routing algorithm used
+ **/
 void processPath(string &path, int allocate, int rta);
 
-
+/// Driver code for the program
 int main(int argc, char const *argv[])
 {
     /// Read topology file
-    FILE *file_ptr;
+    FILE *file_ptr;               /// FD for file to be read
     int numCalls = 0;             /// Number of events in call workload file
-    int numNode = 0;
+    int numNode = 0;              /// Number of nodes in network
     
     if ( argc != 4)
     {
         printf("Usage: %s <topology file> <call workload file> <routing alogrithm>\n", argv[0]);
         exit(0);
     }
-
 
     /// Initialize the graph table with INF/0 values
     int i;
@@ -81,7 +143,6 @@ int main(int argc, char const *argv[])
     int rt_algo = atoi(argv[3]);
 
     /// Reading topology file
-    string line;
     char src, dst;
     int delay,cap;
     char row, col;
@@ -93,17 +154,17 @@ int main(int argc, char const *argv[])
 
          numNode = max((int)row, max(numNode, (int)col));
 
+        /// Initializing link information and state
          propdelay[row][col] = delay;
-
          capacity[row][col] = cap;
-
          available[row][col] = cap;  
-         available[col][row] = -1;
+         available[col][row] = -1;              /// Indicates that the capacity of link can be found in available[row][col]
 
-        /// Have ot change depending on protocol
+        /// Initializing cost matrx based on routing algorithm used
         switch (rt_algo)
         {
         case 1:
+        case 5:
             graph[row][col] = 1;
             graph[col][row] = 1;
             break;
@@ -138,8 +199,10 @@ int main(int argc, char const *argv[])
 
     float strt, duration;
 
+    /// Reading call work load files
     while( fscanf(file_ptr, "%f %c %c %f", &strt, &src, &dst, &duration) == 4 )
     {
+        /// Initialize event information
         EventList[numCalls].event_type = CALL_ARRIVAL;
         EventList[numCalls].strt_time = strt;
         EventList[numCalls].duration = duration;
@@ -149,7 +212,7 @@ int main(int argc, char const *argv[])
     }
     fclose(file_ptr);
 
-
+    /// Initializing simulation metrics
     avgDelay = 0;
     avgHop = 0;
     success = 0;
@@ -158,28 +221,37 @@ int main(int argc, char const *argv[])
     i = 0;
     int handledCalls = 0;
 
+    /// Processing calls in event list
     while (handledCalls != numCalls)
     {
         /// Read event
         int type = EventList[i].event_type;
-        if ( type == 1 )
+        if ( type == 1 )                        /// Case when call is an incoming call
         {
+
+            int rt = rt_algo > 2 ? 1 : 0;
+
             string res;
-            if( rt_algo ==  4 || rt_algo == 3)
-                res = djikstra_max(EventList[i].source, EventList[i].dest, numNode+1);
-            else
-                res = djikstra(EventList[i].source, EventList[i].dest, numNode+1);
+            res = djikstra(EventList[i].source, EventList[i].dest, numNode+1, rt);
+
+            string empty;
+            if (rt_algo == 5)
+            {
+                empty = djikstra(EventList[i].source, EventList[i].dest, numNode+1, rt);
+                if ( res.size() > empty.size() ) res = "";
+            }
+
     
-            if ( res.length() > 0 )
+            if ( res.length() > 0 )                     /// Case when call is successful
             {   
                 // printf("Main while: Allocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, res.c_str());             
                 success++;
-                EventList[i].strt_time += EventList[i].duration;
-                EventList[i].event_type = CALL_END;
-                EventList[i].route = res;
-                processPath(res, 1, rt_algo);
-                eventShift(i, numCalls);
-            } else 
+                EventList[i].strt_time += EventList[i].duration;            /// Set end time for call
+                EventList[i].event_type = CALL_END;                         /// Change type of event to end call
+                EventList[i].route = res;                      
+                processPath(res, 1, rt_algo);                               /// Allocate memory for call
+                eventShift(i, numCalls);                                    /// Sort EventList 
+            } else                                    /// Case when call is blocked         
             {
                 blocked++;
                 EventList[i].event_type = 0;
@@ -187,10 +259,10 @@ int main(int argc, char const *argv[])
                 i++;
             }
         }
-        else
+        else                    /// Case when anevent is an end call event 
         {
             // printf("Main while: Deallocating %c -> %c = %s\n", EventList[i].source, EventList[i].dest, EventList[i].route.c_str());             
-            processPath(EventList[i].route, 0, rt_algo);
+            processPath(EventList[i].route, 0, rt_algo);                     /// Deallocate memory
             EventList[i].event_type = 0;
             i++;
             handledCalls++;
@@ -202,8 +274,8 @@ int main(int argc, char const *argv[])
     avgDelay /= (float)success;
     avgHop /=   (float)success;
     float blockPercentage = (100 * (float)blocked) / (float)numCalls;
-    string routing;
 
+    string routing;
     switch (rt_algo)
     {
     case 1:
@@ -221,6 +293,10 @@ int main(int argc, char const *argv[])
     case 4:
         routing="MFC";
         break;
+    
+    case 5:
+        routing="SHPO";
+        break;
     }
 
     printf("Policy \t Calls \t Succ \t Block(%%) \t Hops \t Delay\n");
@@ -236,10 +312,11 @@ void eventShift(int event_i, int numCalls)
 {
     float strt, duration;
     int type;
-    int head = event_i + 1;
-    int tail = event_i;
     char src, dest;
     string rt;
+
+    int head = event_i + 1;         /// Next call
+    int tail = event_i;             /// Current call
 
     /// Get copy
     strt = EventList[event_i].strt_time;
@@ -252,7 +329,7 @@ void eventShift(int event_i, int numCalls)
 
     while (1)
     {
-        if( EventList[head].strt_time >= strt  || head == numCalls)
+        if( EventList[head].strt_time >= strt  || head == numCalls)             /// Case when the new index of event is found
         {
             EventList[tail].strt_time = strt;
             EventList[tail].duration = duration;
@@ -262,7 +339,7 @@ void eventShift(int event_i, int numCalls)
             EventList[tail].route = rt;
             break;
         }
-        else
+        else                                                                    /// Shifting other events
         {
             EventList[tail].strt_time = EventList[head].strt_time;
             EventList[tail].duration = EventList[head].duration;
@@ -271,6 +348,8 @@ void eventShift(int event_i, int numCalls)
             EventList[tail].dest = EventList[head].dest;
             EventList[tail].route = EventList[head].route;
         }
+
+        /// Move window
         tail = head;
         head++;
     }
@@ -282,14 +361,17 @@ void processPath(string &path, int allocate, int rta)
 {
     float callDelay = 0;
 
+    /// Increment total path hops to avgHop if allocating resources
     if ( allocate )
         avgHop += ((float)path.length() - 1 );
 
+    /// Iterate through path and allocate/deallocate network resource
     for (int i = 1; i < path.size(); i++)
     {
-        char row = ((char)path[i - 1]) - 'A';
-        char col = ((char)path[i]) - 'A';
+        char row = ((char)path[i - 1]) - 'A';       /// current node
+        char col = ((char)path[i]) - 'A';           /// next node
 
+        /// Determine where availability of link is in availability matrix
         if ( available[row][col] == -1 ) 
         {
             char temp = row;
@@ -297,9 +379,11 @@ void processPath(string &path, int allocate, int rta)
             col =  temp;
         }
 
-        if ( !allocate ) 
+        if ( !allocate )                /// Case when deallocating resource
         {
-            available[row][col]++;
+            available[row][col]++;      /// Increase available connections in link
+
+            /// Edit cost matrix when using MFC
             if ( rta == 4 ) 
             {
                 graph[row][col] -= 1.0;
@@ -308,7 +392,9 @@ void processPath(string &path, int allocate, int rta)
         }
         else
         {
-            available[row][col]--;
+            available[row][col]--;  /// Decrease available connections in link
+
+             /// Edit cost matrix when using MFC
             if ( rta == 4 ) 
             {
                 graph[row][col] += 1.0;
@@ -317,6 +403,7 @@ void processPath(string &path, int allocate, int rta)
             callDelay += propdelay[row][col];
         }
 
+        /// Edit cost matrix when using LLP
         if ( rta == 3 )
         {
             float av = (float)available[row][col];
@@ -329,49 +416,74 @@ void processPath(string &path, int allocate, int rta)
 
     }
 
+     /// Increment total path delay to avgDelay if allocating resources
     if ( allocate )
         avgDelay += callDelay;   
 }
 
 
-string djikstra(char src, char dst, int numV) 
+string djikstra(char src, char dst, int numV, int rt) 
 {
+
+    /// Normalize source and destination node
     int src_i = (int)(src - 'A');
     int dst_i = (int)(dst - 'A');
 
-    float dist[numV];
-    bool sptSet[numV];
-    int parent[numV];
+    float dist[numV];           /// Cost from src to node i
+    bool sptSet[numV];          /// Check if node i has already been evaluated
+    int parent[numV];           /// Parent of node i
 
-    parent[src_i] = -1;
+    parent[src_i] = -1;         /// Parent of source node is NULL
+
+    /// Initialize distance to all cost to nodes to INF
     for(int i = 0; i < numV; i++)
     {
         dist[i] = INF;
         sptSet[i] = false;
     }
 
-    dist[src_i] = 0;
+    dist[src_i] = rt == 1 ? -INF : 0;           /// Distance to src node is always 0
 
+    /// Find all the "optimize" path from src node to all nodes
     for(int step = 0; step < numV - 1; step++)
     {
-        int u = minDistance(dist, sptSet, numV, 0);
-        sptSet[u] = true;
+
+        int u = minDistance(dist, sptSet, numV, rt);     /// Find the "least" cost node that has not been evaluated
+        
+        sptSet[u] = true;       /// Mark node as evaluated
         
 
+        /// Check if current node to other nodes is cheaper than currently computed value to those nodes
 		for (int v = 0; v < numV; v++)
         {
+            /// Change evaluation method depending on algorithm used
+            switch (rt)
+            {
+            case 0:
+                if (!sptSet[v] && graph[u][v] && dist[u] + graph[u][v] < dist[v]
+                && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
+                { 
+                    parent[v] = u; 
+                    dist[v] = dist[u] + graph[u][v]; 
+                } 
+                break;
+            
+            case 1:
+                if (!sptSet[v] && graph[u][v] && max(dist[u] , graph[u][v]) < dist[v]
+                && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
+                { 
+                    parent[v] = u; 
+                    dist[v] = max(dist[u] , graph[u][v]); 
+                } 
+                break;
+            }
 
-			if (!sptSet[v] && graph[u][v] && dist[u] + graph[u][v] < dist[v]
-            && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
-			{ 
-				parent[v] = u; 
-				dist[v] = dist[u] + graph[u][v]; 
-			} 
         } 
     }
 
-    if (dist[dst_i] == INF) return "";
+    if (dist[dst_i] == INF) return "";      /// When no path to destination from 
 
+    /// Find strint representation of path
     string path;
     path += src;
     path += getPath(parent, dst_i);
@@ -382,13 +494,12 @@ string djikstra(char src, char dst, int numV)
 
 string getPath(int parent[], int j) 
 { 
-	// Base Case : If j is source 
-	if (parent[j] == - 1) return ""; 
+
+	if (parent[j] == - 1) return "";  /// Base Case : If j is source 
 
     string temp;
     char node = j + 'A';
-    // printf("Parent is %d \t j = %d\n", parent[j], j);
-	temp += getPath(parent, parent[j]);
+	temp += getPath(parent, parent[j]); /// Recursively find path to node j
     temp += node;
 
     return temp; 
@@ -397,20 +508,21 @@ string getPath(int parent[], int j)
 
 int minDistance(float dist[], bool sptSet[], int V, int rt) 
 { 
-	// Initialize min value 
-	float min = INF;
+	float min = INF; // Initialize min value 
     int min_index; 
 
+    /// Iterate through cost list and find the "least" cost node that has not been evaluated
 	for (int v = 0; v < V; v++) 
     {
+        /// Use different evaliation methond depending on routing algorithm
         switch (rt)
         {
-        case 0:
+        case 0:     /// SHPF and SDPF
             if (sptSet[v] == false && dist[v] < min) 
 			    min = dist[v], min_index = v; 
             break;
         
-        case 1:
+        case 1:     /// LLP and MFC
             if (sptSet[v] == false && dist[v] <= min) 
 			    min = dist[v], min_index = v; 
             break;
@@ -423,48 +535,56 @@ int minDistance(float dist[], bool sptSet[], int V, int rt)
 
 
 
-string djikstra_max(char src, char dst, int numV) 
+string ult_shortest(char src, char dst, int numV) 
 {
+
+    /// Normalize source and destination node
     int src_i = (int)(src - 'A');
     int dst_i = (int)(dst - 'A');
 
-    float dist[numV];
-    bool sptSet[numV];
-    int parent[numV];
+    float dist[numV];           /// Cost from src to node i
+    bool sptSet[numV];          /// Check if node i has already been evaluated
+    int parent[numV];           /// Parent of node i
 
-    parent[src_i] = -1;
+    parent[src_i] = -1;         /// Parent of source node is NULL
+
+    /// Initialize distance to all cost to nodes to INF
     for(int i = 0; i < numV; i++)
     {
         dist[i] = INF;
         sptSet[i] = false;
     }
 
-    dist[src_i] = -INF;
+    dist[src_i] =  0;           /// Distance to src node is always 0
 
+    /// Find all the "optimize" path from src node to all nodes
     for(int step = 0; step < numV - 1; step++)
     {
-        int u = minDistance(dist, sptSet, numV, 1);
-        sptSet[u] = true;
 
+        int u = minDistance(dist, sptSet, numV, 0);     /// Find the "least" cost node that has not been evaluated
+        
+        sptSet[u] = true;       /// Mark node as evaluated
+        
+
+        /// Check if current node to other nodes is cheaper than currently computed value to those nodes
 		for (int v = 0; v < numV; v++)
         {
-			if (!sptSet[v] && graph[u][v] && max(dist[u] , graph[u][v]) < dist[v]
-            && ( available[u][v] > 0 || available[v][u] > 0 ) ) 
-			{ 
-				parent[v] = u; 
-				dist[v] = max(dist[u] , graph[u][v]); 
-			} 
+
+            if (!sptSet[v] && graph[u][v] && dist[u] + graph[u][v] < dist[v] ) 
+            { 
+                parent[v] = u; 
+                dist[v] = dist[u] + graph[u][v]; 
+            } 
+
         } 
     }
 
-    if (dist[dst_i] == INF) return "";
+    if (dist[dst_i] == INF) return "";      /// When no path to destination from 
 
+    /// Find strint representation of path
     string path;
     path += src;
     path += getPath(parent, dst_i);
 
     return path;
 }
-
-
-
